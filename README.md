@@ -2,7 +2,7 @@
 
 中文 | [English](README_EN.md)
 
-**Emberveil 治疗框架**（HealBot 式）· 适用于 Emberveil 客户端（WoW 1.12.1 模拟 / Lua 5.1 API）· 当前版本 1.0.13
+**Emberveil 治疗框架**（HealBot 式）· 适用于 Emberveil 客户端（WoW 1.12.1 模拟 / Lua 5.1 API）· 当前版本 1.0.14
 
 ## 功能
 
@@ -19,7 +19,7 @@
 
 ## 安装
 
-1. 下载 `EmberHeal-1.0.13.zip`（右侧 Releases）并解压
+1. 下载 `EmberHeal-1.0.14.zip`（右侧 Releases）并解压
 2. 把 `EmberHeal` 整个文件夹放进 `...\Emberveil\live\Azeroth\Interface\AddOns\`
 3. 重登游戏（或 `/reload`）即生效
 

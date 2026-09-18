@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-**HealBot-style healing frame for Emberveil** · for the Emberveil client (WoW 1.12.1 emulation / Lua 5.1 API) · current version 1.0.13
+**HealBot-style healing frame for Emberveil** · for the Emberveil client (WoW 1.12.1 emulation / Lua 5.1 API) · current version 1.0.14
 
 ## Features
 
@@ -19,7 +19,7 @@
 
 ## Install
 
-1. Download `EmberHeal-1.0.13.zip` from the Releases page and extract it
+1. Download `EmberHeal-1.0.14.zip` from the Releases page and extract it
 2. Put the whole `EmberHeal` folder into `...\Emberveil\live\Azeroth\Interface\AddOns\`
 3. Re-log (or `/reload`) and you are set
 
