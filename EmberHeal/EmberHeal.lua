@@ -173,6 +173,7 @@ local L_ZH = {
 	uDebuff      = "减益: ",
 	petTag       = "宠",
 	petOwner     = "主人: ",
+	hpUnknown    = "血量未知",
 	clickLeft    = "左键",
 	clickLeftShift = "左键+Shift",
 	clickLeftCtrl  = "左键+Ctrl",
@@ -271,6 +272,7 @@ local L_EN = {
 	uDebuff      = "Debuff: ",
 	petTag       = "pet",
 	petOwner     = "Owner: ",
+	hpUnknown    = "Health unknown",
 	clickLeft    = "Left",
 	clickLeftShift = "Left+Shift",
 	clickLeftCtrl  = "Left+Ctrl",
@@ -595,7 +597,7 @@ end
 -- -------------------------------------------------------------
 -- Unit snapshot (fills member table with display data)
 -- -------------------------------------------------------------
-function EVH.snapshot(m)
+local function snapshotCore(m)
 	local unit = m.unit
 	local hp = UnitHealth(unit)
 	local mx = UnitHealthMax(unit)
@@ -663,6 +665,43 @@ function EVH.snapshot(m)
 			end
 		end
 		m.missingBuffs = missing
+	end
+end
+
+-- Pet tokens may implement only part of the Unit API on some builds
+-- (first live test: name/exists worked, health came back 0). Never let
+-- one failing getter kill the refresh loop, and log the engine's answers
+-- once per session so /eh diag shows what the client actually returns.
+local petProbed = {}
+function EVH.snapshot(m)
+	if m.isPet then
+		local ok, err = pcall(snapshotCore, m)
+		if not ok then
+			EVH.diag("pet snapshot err: " .. string.sub(tostring(err), 1, 140))
+			m.hp = m.hp or 0
+			m.max = m.max or 0
+			m.pct = m.pct or 0
+			m.dead = m.dead or false
+			m.offline = m.offline or false
+			m.inCombat = m.inCombat or false
+			m.mana = m.mana or 0
+			m.manaMax = m.manaMax or 0
+			m.debuffs = m.debuffs or {}
+			m.missingBuffs = m.missingBuffs or {}
+		end
+		if not petProbed[m.unit] then
+			petProbed[m.unit] = true
+			local okH, h = pcall(UnitHealth, m.unit)
+			local okM, mx = pcall(UnitHealthMax, m.unit)
+			local okE, ex = pcall(UnitExists, m.unit)
+			EVH.diag("petAPI unit=" .. tostring(m.unit)
+				.. " exists=" .. tostring(okE and ex)
+				.. " name=" .. tostring(UnitName(m.unit))
+				.. " hp=" .. tostring(h) .. "/" .. tostring(mx)
+				.. " errH=" .. tostring(not okH) .. " errM=" .. tostring(not okM))
+		end
+	else
+		snapshotCore(m)
 	end
 end
 
