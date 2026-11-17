@@ -698,7 +698,7 @@ local function refreshAll()
 	-- pcall -- a throw anywhere in here used to kill refreshAll silently
 	-- every tick (frozen cells, nothing in chat).
 	local okPet, errPet = pcall(function()
-		if db and db.opts and db.opts.showPets == 1 then
+		if db and db.opts and (db.opts.showHunterPets == 1 or db.opts.showOtherPets == 1) then
 			local now = (GetTime and GetTime() or 0)
 			if (now - lastPetCheck) >= 1.0 then
 				lastPetCheck = now
@@ -722,7 +722,8 @@ local function refreshAll()
 						else
 							cls = select(2, UnitClass("party" .. i))
 						end
-						if cls == "HUNTER" or cls == "WARLOCK" then
+						if (cls == "HUNTER" and db.opts.showHunterPets == 1)
+						or (cls ~= "HUNTER" and db.opts.showOtherPets == 1) then
 							local pu = (isRaid and "raidpet" or "partypet") .. i
 							if UnitExists(pu) and not known[pu] then changed = true break end
 						end
@@ -946,12 +947,18 @@ local function buildDisplayPage(page)
 	tog("EVH_Aggro", L.showAggro, function() return db.opts.showAggro == 1 end, function()
 		db.opts.showAggro = (db.opts.showAggro == 1) and 0 or 1
 	end, L.tipAggro)
-	tog("EVH_ShowPets", L.showPets, function() return db.opts.showPets == 1 end, function()
-		db.opts.showPets = (db.opts.showPets == 1) and 0 or 1
+	tog("EVH_HunterPets", L.showHunterPets, function() return db.opts.showHunterPets == 1 end, function()
+		db.opts.showHunterPets = (db.opts.showHunterPets == 1) and 0 or 1
 		EV.buildRoster()
 		EV.rebuildLayout()
 		EV.refreshAll()
-	end, L.tipShowPets)
+	end, L.tipHunterPets)
+	tog("EVH_OtherPets", L.showOtherPets, function() return db.opts.showOtherPets == 1 end, function()
+		db.opts.showOtherPets = (db.opts.showOtherPets == 1) and 0 or 1
+		EV.buildRoster()
+		EV.rebuildLayout()
+		EV.refreshAll()
+	end, L.tipOtherPets)
 	tog("EVH_Lock", L.lockPos, function() return db.opts.locked == 1 end, function()
 		db.opts.locked = (db.opts.locked == 1) and 0 or 1
 	end, L.tipLock)
