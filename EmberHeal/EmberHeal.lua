@@ -510,8 +510,22 @@ EVH.roster = {}
 function EVH.buildRoster()
 	local out = {}
 	local wantPets = (db and db.opts and db.opts.showPets == 1)
+	-- append a pet member (guarded: if this build lacks partypet/raidpet/pet
+	-- unit support the entry simply never appears, no error surfaces)
+	local function addPet(pu, cls, subgroup, owner)
+		local okE, has = pcall(UnitExists, pu)
+		if not (okE and has) then return end
+		local okN, pn = pcall(UnitName, pu)
+		if not (okN and pn and pn ~= "") then return end
+		out[#out + 1] = {
+			unit = pu, name = pn, class = cls,
+			subgroup = subgroup or 1, isPet = true, owner = owner,
+		}
+	end
+	local me = UnitName("player")
 	local n = GetNumRaidMembers()
 	if n > 0 then
+		local mySubgroup = 1
 		for i = 1, n do
 			local name, rank, subgroup, level, clsLocal, clsFile, zone, online, isDead = GetRaidRosterInfo(i)
 			if name then
@@ -521,25 +535,20 @@ function EVH.buildRoster()
 					unit = unit, name = name, class = clsFile,
 					subgroup = subgroup or 1, online = online, isDead = isDead,
 				}
+				if name == me then mySubgroup = subgroup or 1 end
 				-- opt-in hunter pets: raidpet units are clickable/healable like
 				-- party members (owner's class colour, sorted after the owner)
 				if wantPets and clsFile == "HUNTER" then
-					local pu = "raidpet" .. i
-					local okE, has = pcall(UnitExists, pu)
-					if okE and has then
-						local okN, pn = pcall(UnitName, pu)
-						if okN and pn and pn ~= "" then
-							out[#out + 1] = {
-								unit = pu, name = pn, class = clsFile,
-								subgroup = subgroup or 1, isPet = true, owner = name,
-							}
-						end
-					end
+					addPet("raidpet" .. i, clsFile, subgroup, name)
 				end
 			end
 		end
+		-- the player's own pet (any pet class), solo or raid
+		if wantPets then
+			local _, myClass = UnitClass("player")
+			addPet("pet", myClass, mySubgroup, me)
+		end
 	else
-		local me = UnitName("player")
 		local clsLocal, myClass = UnitClass("player")
 		if myClass then CLASS_LOCAL[myClass] = clsLocal end
 		out[#out + 1] = { unit = "player", name = me, class = myClass, subgroup = 1 }
@@ -552,19 +561,13 @@ function EVH.buildRoster()
 				if c2 then CLASS_LOCAL[c2] = cLocal end
 				out[#out + 1] = { unit = unit, name = nm, class = c2, subgroup = 1 }
 				if wantPets and c2 == "HUNTER" then
-					local pu = "partypet" .. i
-					local okE, has = pcall(UnitExists, pu)
-					if okE and has then
-						local okN, pn = pcall(UnitName, pu)
-						if okN and pn and pn ~= "" then
-							out[#out + 1] = {
-								unit = pu, name = pn, class = c2,
-								subgroup = 1, isPet = true, owner = nm,
-							}
-						end
-					end
+					addPet("partypet" .. i, c2, 1, nm)
 				end
 			end
+		end
+		-- the player's own pet (any pet class), solo or party
+		if wantPets then
+			addPet("pet", myClass, 1, me)
 		end
 	end
 	-- subgroup, then owner-adjacent name (a pet sorts right after its owner)
