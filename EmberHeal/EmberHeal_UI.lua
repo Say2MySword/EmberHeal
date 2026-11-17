@@ -681,6 +681,13 @@ local function updateButton(b, m)
 	end
 end
 
+-- refresh-path state (plain locals -- see note in refreshAll about why
+-- nothing may be stored on the refreshAll function value itself)
+local lastPetCheck = 0
+local lastPetErr
+local lastCellErr
+local lastCellErrAt = 0
+
 local function refreshAll()
 	local g = EVH.grid
 	if not g or not g.GridFrame then return end
@@ -693,8 +700,8 @@ local function refreshAll()
 	local okPet, errPet = pcall(function()
 		if db and db.opts and db.opts.showPets == 1 then
 			local now = (GetTime and GetTime() or 0)
-			if (now - (refreshAll.lastPetCheck or 0)) >= 1.0 then
-				refreshAll.lastPetCheck = now
+			if (now - lastPetCheck) >= 1.0 then
+				lastPetCheck = now
 				local known = {}
 				for _, m in ipairs(EV.roster) do
 					if m.isPet then known[m.unit] = true end
@@ -728,8 +735,11 @@ local function refreshAll()
 			end
 		end
 	end)
-	if not okPet and errPet ~= refreshAll.lastPetErr then
-		refreshAll.lastPetErr = errPet
+	-- throttle state lives in file locals: this engine raises "attempt to
+	-- index a function value" on refreshAll.lastPetCheck-style fields, and
+	-- that single throw froze the whole grid every tick
+	if not okPet and errPet ~= lastPetErr then
+		lastPetErr = errPet
 		EV.echo("petcheck error: " .. string.sub(tostring(errPet), 1, 140))
 	end
 	-- visible failure reporting: OnUpdate errors are swallowed silently on
@@ -743,9 +753,9 @@ local function refreshAll()
 			if not ok then
 				local e = string.sub(tostring(err), 1, 140)
 				local now2 = (GetTime and GetTime() or 0)
-				if e ~= refreshAll.lastCellErr or (now2 - (refreshAll.lastCellErrAt or 0)) > 5 then
-					refreshAll.lastCellErr = e
-					refreshAll.lastCellErrAt = now2
+				if e ~= lastCellErr or (now2 - lastCellErrAt) > 5 then
+					lastCellErr = e
+					lastCellErrAt = now2
 					EV.echo("cell error: " .. e)
 				end
 			end
