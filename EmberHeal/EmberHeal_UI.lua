@@ -569,12 +569,16 @@ local function updateButton(b, m)
 	else
 		cr, cg, cb = 0.9, 0.9, 0.9
 	end
+	-- pets: fixed warm amber bar -- at full HP the class-coloured bar
+	-- covers the whole cell, so a different bar colour is the only pet
+	-- marker that is visible at every HP level
+	if m.isPet then cr, cg, cb = 0.75, 0.52, 0.25 end
 	if m.dead then cr, cg, cb = 0.2, 0.2, 0.2 end
 	if m.offline then cr, cg, cb = 0.25, 0.25, 0.25 end
 	if test then cr, cg, cb = 1, 0.3, 0.2 end
 	bar:SetStatusBarColor(cr, cg, cb)
 
-	-- name: pets carry a 宠/pet tag in warm orange on a tan cell so they are
+	-- name: pets carry a 宠/pet tag in warm orange so they are
 	-- distinguishable from players at a glance
 	local name = b.name
 	if m.isPet then
@@ -584,15 +588,7 @@ local function updateButton(b, m)
 		name:SetText(m.name or "?")
 		name:SetTextColor(1, 1, 1)
 	end
-	-- unit buttons have no evhBG (that is an options-panel texture);
-	-- the cell background is barBg -- tint it so pets stand out
-	if b.barBg then
-		if m.isPet then
-			b.barBg:SetTexture(0.12, 0.09, 0.05, 0.9)
-		else
-			b.barBg:SetTexture(0.06, 0.06, 0.06, 0.9)
-		end
-	end
+	-- cell base stays the original dark gray for everyone (upstream look)
 	-- integer pixel size + auto-extent (no SetWidth/SetHeight): the
 	-- wrapped-fontstring path double-renders on this engine (ghosting)
 	local fsize = floor((opts.fontSize or 11) * scale + 0.5)
