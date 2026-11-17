@@ -570,14 +570,27 @@ local function updateButton(b, m)
 	if test then cr, cg, cb = 1, 0.3, 0.2 end
 	bar:SetStatusBarColor(cr, cg, cb)
 
-	-- name (hunter pets carry a "宠/pet" tag so they read as pets, not players)
+	-- name: pets carry a 宠/pet tag in warm orange on a tan cell so they are
+	-- distinguishable from players at a glance
 	local name = b.name
-	name:SetText(((m.isPet and (L.petTag .. " ")) or "") .. (m.name or "?"))
+	if m.isPet then
+		name:SetText(L.petTag .. " " .. (m.name or "?"))
+		name:SetTextColor(1, 0.72, 0.40)
+	else
+		name:SetText(m.name or "?")
+		name:SetTextColor(1, 1, 1)
+	end
+	if b.evhBG then
+		if m.isPet then
+			b.evhBG:SetTexture(0.26, 0.19, 0.10, 0.72)
+		else
+			b.evhBG:SetTexture(0.16, 0.16, 0.16, 0.72)
+		end
+	end
 	-- integer pixel size + auto-extent (no SetWidth/SetHeight): the
 	-- wrapped-fontstring path double-renders on this engine (ghosting)
 	local fsize = floor((opts.fontSize or 11) * scale + 0.5)
 	name:SetFont(FONT_PATH, fsize)
-	name:SetTextColor(1, 1, 1)
 
 	-- health text
 	local hpfs = b.hp
@@ -678,6 +691,8 @@ local function refreshAll()
 				if m.isPet then known[m.unit] = true end
 			end
 			local changed = false
+			-- own pet summon/despawn
+			if not known["pet"] and UnitExists("pet") then changed = true end
 			for u in pairs(known) do
 				if not UnitExists(u) then changed = true break end
 			end
