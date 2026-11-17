@@ -722,7 +722,7 @@ local function refreshAll()
 						else
 							cls = select(2, UnitClass("party" .. i))
 						end
-						if cls == "HUNTER" then
+						if cls == "HUNTER" or cls == "WARLOCK" then
 							local pu = (isRaid and "raidpet" or "partypet") .. i
 							if UnitExists(pu) and not known[pu] then changed = true break end
 						end
