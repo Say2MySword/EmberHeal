@@ -99,7 +99,7 @@ local strsub = string.sub
 local strlower = string.lower
 local strformat = string.format
 
-EVH.VERSION = "1.0.22-local"
+EVH.VERSION = "1.0.23"
 
 -- -------------------------------------------------------------
 -- Localization (zhCN / enUS, picked by client locale)
@@ -138,6 +138,8 @@ local L_ZH = {
 	showBuffW    = "增益监视",
 	showRange    = "范围提示",
 	showAggro    = "仇恨提示",
+	showHunterPets = "猎人宝宝",
+	showOtherPets  = "其他职业宝宝",
 	rangeDist    = "范围判定",
 	resetPos     = "重置位置",
 	testMode     = "测试模式",
@@ -170,6 +172,9 @@ local L_ZH = {
 	uOor         = "超出范围",
 	uAggro       = "被攻击",
 	uDebuff      = "减益: ",
+	petTag       = "宠",
+	petOwner     = "主人: ",
+	hpUnknown    = "血量未知",
 	clickLeft    = "左键",
 	clickLeftShift = "左键+Shift",
 	clickLeftCtrl  = "左键+Ctrl",
@@ -194,6 +199,8 @@ local L_ZH = {
 	tipBuffW     = "\"监视\"页列表中的增益缺失时,框体左上角显示黄点",
 	tipRange     = "队友超出施法距离时,其框体整体变暗",
 	tipAggro     = "队友正被怪物攻击时,其框体显示红色边框",
+	tipHunterPets = "开启后,猎人队友的宠物会作为额外成员显示在主人旁边(名字前带\"宠\"标记,悬停可见主人),可像队友一样点击施法给宝宝加血;默认关闭",
+	tipOtherPets  = "开启后,其他有宝宝的职业(如术士)队友的宠物也会同样显示并可点击加血;默认关闭",
 	tipLock      = "锁定后治疗框架不可拖动,防止战斗中误拖",
 	tipClickDbg  = "排查鼠标键无反应:开启后点击治疗格子会在聊天框输出各环节参数(事件/按键名/绑定槽位),设置跨重载保存",
 	tipMidCast   = "释放引擎占用的鼠标中键(原绑定会被记住,关闭时自动还原并保存),否则点击施法收不到中键",
@@ -232,6 +239,8 @@ local L_EN = {
 	showBuffW    = "Buff watch",
 	showRange    = "Range dim",
 	showAggro    = "Aggro border",
+	showHunterPets = "Hunter pets",
+	showOtherPets  = "Other pets",
 	rangeDist    = "Range check",
 	resetPos     = "Reset position",
 	testMode     = "Test mode",
@@ -264,6 +273,9 @@ local L_EN = {
 	uOor         = "Out of range",
 	uAggro       = "Aggro",
 	uDebuff      = "Debuff: ",
+	petTag       = "pet",
+	petOwner     = "Owner: ",
+	hpUnknown    = "Health unknown",
 	clickLeft    = "Left",
 	clickLeftShift = "Left+Shift",
 	clickLeftCtrl  = "Left+Ctrl",
@@ -288,6 +300,8 @@ local L_EN = {
 	tipBuffW     = "Yellow dot at the top-left when a buff from the Watch list is missing",
 	tipRange     = "Dim the whole cell when the member is out of casting range",
 	tipAggro     = "Red border on the cell of a member being attacked",
+	tipHunterPets = "Show hunter teammates' pets as extra members next to their owner (\"pet\" tag, owner on hover) so they can be click-healed; off by default",
+	tipOtherPets  = "Also show other pet classes' minions (e.g. warlocks) the same way; off by default",
 	tipLock      = "Lock the healing grid so it cannot be dragged by mistake",
 	tipClickDbg  = "Diagnose dead mouse buttons: clicking a cell prints event/button/slot info to chat; persists across reloads",
 	tipMidCast   = "Frees the engine's middle-button binding (remembered and restored when turned off); otherwise click-cast never sees the middle button",
@@ -372,6 +386,8 @@ local DEFAULT_DB = {
 		showBuffW    = 1,
 		showRange    = 1,
 		showAggro    = 1,
+		showHunterPets = 0,  -- 猎人宝宝(默认关)
+		showOtherPets  = 0,  -- 其他职业宝宝,如术士(默认关)
 		numDebuffs   = 4,
 		rangeDist    = 4,     -- CheckInteractDistance bucket
 		locked       = 0,
@@ -406,6 +422,13 @@ function EVH.loadDB()
 	if type(db.clicks) ~= "table" then db.clicks = {} end
 	if type(db.buffWatch) ~= "table" then db.buffWatch = {} end
 	if type(db.highDebuffs) ~= "table" then db.highDebuffs = {} end
+	-- 旧版单一 showPets 开关迁移:原来开着的算猎人宝宝
+	if db.opts.showPets ~= nil then
+		if db.opts.showPets == 1 and db.opts.showHunterPets ~= 1 then
+			db.opts.showHunterPets = 1
+		end
+		db.opts.showPets = nil
+	end
 	-- 中键在该客户端不会到达 UI,清掉历史遗留的中键绑定
 	if db.clicks then
 		local stale = {}
@@ -500,8 +523,25 @@ EVH.roster = {}
 
 function EVH.buildRoster()
 	local out = {}
+	local wantHunter = (db and db.opts and db.opts.showHunterPets == 1)
+	local wantOther = (db and db.opts and db.opts.showOtherPets == 1)
+	local wantPets = (wantHunter or wantOther) -- own pet shows if either is on
+	-- append a pet member (guarded: if this build lacks partypet/raidpet/pet
+	-- unit support the entry simply never appears, no error surfaces)
+	local function addPet(pu, cls, subgroup, owner)
+		local okE, has = pcall(UnitExists, pu)
+		if not (okE and has) then return end
+		local okN, pn = pcall(UnitName, pu)
+		if not (okN and pn and pn ~= "") then return end
+		out[#out + 1] = {
+			unit = pu, name = pn, class = cls,
+			subgroup = subgroup or 1, isPet = true, owner = owner,
+		}
+	end
+	local me = UnitName("player")
 	local n = GetNumRaidMembers()
 	if n > 0 then
+		local mySubgroup = 1
 		for i = 1, n do
 			local name, rank, subgroup, level, clsLocal, clsFile, zone, online, isDead = GetRaidRosterInfo(i)
 			if name then
@@ -511,10 +551,20 @@ function EVH.buildRoster()
 					unit = unit, name = name, class = clsFile,
 					subgroup = subgroup or 1, online = online, isDead = isDead,
 				}
+				if name == me then mySubgroup = subgroup or 1 end
+				-- opt-in hunter pets: raidpet units are clickable/healable like
+				-- party members (owner's class colour, sorted after the owner)
+				if (wantHunter and clsFile == "HUNTER") or (wantOther and clsFile ~= "HUNTER") then
+					addPet("raidpet" .. i, clsFile, subgroup, name)
+				end
 			end
 		end
+		-- the player's own pet (any pet class), solo or raid
+		if wantPets then
+			local _, myClass = UnitClass("player")
+			addPet("pet", myClass, mySubgroup, me)
+		end
 	else
-		local me = UnitName("player")
 		local clsLocal, myClass = UnitClass("player")
 		if myClass then CLASS_LOCAL[myClass] = clsLocal end
 		out[#out + 1] = { unit = "player", name = me, class = myClass, subgroup = 1 }
@@ -526,11 +576,23 @@ function EVH.buildRoster()
 			if nm then
 				if c2 then CLASS_LOCAL[c2] = cLocal end
 				out[#out + 1] = { unit = unit, name = nm, class = c2, subgroup = 1 }
+				if (wantHunter and c2 == "HUNTER") or (wantOther and c2 ~= "HUNTER") then
+					addPet("partypet" .. i, c2, 1, nm)
+				end
 			end
 		end
+		-- the player's own pet (any pet class), solo or party
+		if wantPets then
+			addPet("pet", myClass, 1, me)
+		end
 	end
+	-- subgroup, then owner-adjacent name (a pet sorts right after its owner)
 	table.sort(out, function(a, b)
 		if a.subgroup ~= b.subgroup then return a.subgroup < b.subgroup end
+		local an = (a.isPet and a.owner) or a.name
+		local bn = (b.isPet and b.owner) or b.name
+		if an ~= bn then return an < bn end
+		if (not not a.isPet) ~= (not not b.isPet) then return not a.isPet end
 		return a.name < b.name
 	end)
 	EVH.roster = out
@@ -549,7 +611,7 @@ end
 -- -------------------------------------------------------------
 -- Unit snapshot (fills member table with display data)
 -- -------------------------------------------------------------
-function EVH.snapshot(m)
+local function snapshotCore(m)
 	local unit = m.unit
 	local hp = UnitHealth(unit)
 	local mx = UnitHealthMax(unit)
@@ -617,6 +679,43 @@ function EVH.snapshot(m)
 			end
 		end
 		m.missingBuffs = missing
+	end
+end
+
+-- Pet tokens may implement only part of the Unit API on some builds
+-- (first live test: name/exists worked, health came back 0). Never let
+-- one failing getter kill the refresh loop, and log the engine's answers
+-- once per session so /eh diag shows what the client actually returns.
+local petProbed = {}
+function EVH.snapshot(m)
+	if m.isPet then
+		local ok, err = pcall(snapshotCore, m)
+		if not ok then
+			EVH.diag("pet snapshot err: " .. string.sub(tostring(err), 1, 140))
+			m.hp = m.hp or 0
+			m.max = m.max or 0
+			m.pct = m.pct or 0
+			m.dead = m.dead or false
+			m.offline = m.offline or false
+			m.inCombat = m.inCombat or false
+			m.mana = m.mana or 0
+			m.manaMax = m.manaMax or 0
+			m.debuffs = m.debuffs or {}
+			m.missingBuffs = m.missingBuffs or {}
+		end
+		if not petProbed[m.unit] then
+			petProbed[m.unit] = true
+			local okH, h = pcall(UnitHealth, m.unit)
+			local okM, mx = pcall(UnitHealthMax, m.unit)
+			local okE, ex = pcall(UnitExists, m.unit)
+			EVH.diag("petAPI unit=" .. tostring(m.unit)
+				.. " exists=" .. tostring(okE and ex)
+				.. " name=" .. tostring(UnitName(m.unit))
+				.. " hp=" .. tostring(h) .. "/" .. tostring(mx)
+				.. " errH=" .. tostring(not okH) .. " errM=" .. tostring(not okM))
+		end
+	else
+		snapshotCore(m)
 	end
 end
 

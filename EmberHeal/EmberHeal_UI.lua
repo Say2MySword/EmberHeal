@@ -219,7 +219,14 @@ local function buildUnitButton(i)
 		GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
 		local r, gg, bl = EV.classColor(m.class)
 		GameTooltip:SetText(m.name or "?", r, gg, bl)
-		GameTooltip:AddLine(strformat("%d / %d (%.0f%%)", m.hp or 0, m.max or 0, m.pct or 0), 0.7, 1, 0.7)
+		if m.isPet then
+			GameTooltip:AddLine(L.petOwner .. tostring(m.owner or "?"), 0.7, 0.7, 0.7)
+		end
+		if (m.max or 0) > 0 then
+			GameTooltip:AddLine(strformat("%d / %d (%.0f%%)", m.hp or 0, m.max or 0, m.pct or 0), 0.7, 1, 0.7)
+		else
+			GameTooltip:AddLine(L.hpUnknown, 0.7, 0.9, 0.7)
+		end
 		if m.dead then GameTooltip:AddLine(L.uDead, 1, 0.3, 0.3) end
 		if m.offline then GameTooltip:AddLine(L.uOffline, 0.5, 0.5, 0.5) end
 		if m.oor then GameTooltip:AddLine(L.uOor, 0.7, 0.7, 0.7) end
@@ -562,30 +569,41 @@ local function updateButton(b, m)
 	else
 		cr, cg, cb = 0.9, 0.9, 0.9
 	end
+	-- pets: fixed warm amber bar -- at full HP the class-coloured bar
+	-- covers the whole cell, so a different bar colour is the only pet
+	-- marker that is visible at every HP level
+	if m.isPet then cr, cg, cb = 0.75, 0.52, 0.25 end
 	if m.dead then cr, cg, cb = 0.2, 0.2, 0.2 end
 	if m.offline then cr, cg, cb = 0.25, 0.25, 0.25 end
 	if test then cr, cg, cb = 1, 0.3, 0.2 end
 	bar:SetStatusBarColor(cr, cg, cb)
 
-	-- name
+	-- name: pets carry a 宠/pet tag in warm orange so they are
+	-- distinguishable from players at a glance
 	local name = b.name
-	name:SetText(m.name or "?")
+	if m.isPet then
+		name:SetText(L.petTag .. " " .. (m.name or "?"))
+		name:SetTextColor(1, 0.72, 0.40)
+	else
+		name:SetText(m.name or "?")
+		name:SetTextColor(1, 1, 1)
+	end
+	-- cell base stays the original dark gray for everyone (upstream look)
 	-- integer pixel size + auto-extent (no SetWidth/SetHeight): the
 	-- wrapped-fontstring path double-renders on this engine (ghosting)
 	local fsize = floor((opts.fontSize or 11) * scale + 0.5)
 	name:SetFont(FONT_PATH, fsize)
-	name:SetTextColor(1, 1, 1)
 
-	-- health text
+	-- health text (pets with an unsynced max show "?" instead of a bogus 0)
 	local hpfs = b.hp
 	local hpText = ""
-	if opts.showPct == 1 then hpText = strformat("%.0f%%", m.pct or 0) end
-	if opts.showHealth == 1 then
-		if hpText ~= "" then
-			hpText = strformat("%d %s", m.hp or 0, hpText)
-		else
-			hpText = strformat("%d", m.hp or 0)
-		end
+	if m.isPet and mx == 0 then
+		hpText = "?"
+	elseif opts.showPct == 1 then hpText = strformat("%.0f%%", m.pct or 0) end
+	if hpText == "" and opts.showHealth == 1 then
+		hpText = strformat("%d", m.hp or 0)
+	elseif hpText ~= "" and hpText ~= "?" and opts.showHealth == 1 then
+		hpText = strformat("%d %s", m.hp or 0, hpText)
 	end
 	hpfs:SetText(hpText)
 	hpfs:SetFont(FONT_PATH, fsize)
@@ -659,14 +677,85 @@ local function updateButton(b, m)
 	end
 end
 
+-- refresh-path state (plain locals -- see note in refreshAll about why
+-- nothing may be stored on the refreshAll function value itself)
+local lastPetCheck = 0
+local lastPetErr
+local lastCellErr
+local lastCellErrAt = 0
+
 local function refreshAll()
 	local g = EVH.grid
 	if not g or not g.GridFrame then return end
 	if not g.GridFrame:IsShown() then return end
+	-- hunter pets (opt-in) summon/despawn without firing any roster event:
+	-- at most once per second, compare present pet units against the roster
+	-- and rebuild when a pet appeared or vanished. The whole block is one
+	-- pcall -- a throw anywhere in here used to kill refreshAll silently
+	-- every tick (frozen cells, nothing in chat).
+	local okPet, errPet = pcall(function()
+		if db and db.opts and (db.opts.showHunterPets == 1 or db.opts.showOtherPets == 1) then
+			local now = (GetTime and GetTime() or 0)
+			if (now - lastPetCheck) >= 1.0 then
+				lastPetCheck = now
+				local known = {}
+				for _, m in ipairs(EV.roster) do
+					if m.isPet then known[m.unit] = true end
+				end
+				local changed = false
+				-- own pet summon/despawn
+				if not known["pet"] and UnitExists("pet") then changed = true end
+				for u in pairs(known) do
+					if not UnitExists(u) then changed = true break end
+				end
+				if not changed then
+					local isRaid = (GetNumRaidMembers() > 0)
+					local n = isRaid and GetNumRaidMembers() or GetNumPartyMembers()
+					for i = 1, n do
+						local cls
+						if isRaid then
+							cls = select(6, GetRaidRosterInfo(i))
+						else
+							cls = select(2, UnitClass("party" .. i))
+						end
+						if (cls == "HUNTER" and db.opts.showHunterPets == 1)
+						or (cls ~= "HUNTER" and db.opts.showOtherPets == 1) then
+							local pu = (isRaid and "raidpet" or "partypet") .. i
+							if UnitExists(pu) and not known[pu] then changed = true break end
+						end
+					end
+				end
+				if changed then
+					EV.buildRoster()
+					layoutGrid()
+				end
+			end
+		end
+	end)
+	-- throttle state lives in file locals: this engine raises "attempt to
+	-- index a function value" on refreshAll.lastPetCheck-style fields, and
+	-- that single throw froze the whole grid every tick
+	if not okPet and errPet ~= lastPetErr then
+		lastPetErr = errPet
+		EV.echo("petcheck error: " .. string.sub(tostring(errPet), 1, 140))
+	end
+	-- visible failure reporting: OnUpdate errors are swallowed silently on
+	-- this engine, and a throw anywhere below froze every cell (no bg tint,
+	-- no hp, stale tooltip) with nothing in chat. Echo each distinct error
+	-- (throttled) so the failing file:line lands in chat.
 	for i = 1, g.shown or 0 do
 		local b = g.buttons[i]
 		if b and b.evhMember then
-			updateButton(b, b.evhMember)
+			local ok, err = pcall(updateButton, b, b.evhMember)
+			if not ok then
+				local e = string.sub(tostring(err), 1, 140)
+				local now2 = (GetTime and GetTime() or 0)
+				if e ~= lastCellErr or (now2 - lastCellErrAt) > 5 then
+					lastCellErr = e
+					lastCellErrAt = now2
+					EV.echo("cell error: " .. e)
+				end
+			end
 		end
 	end
 end
@@ -744,7 +833,9 @@ local function buildGrid()
 	if okLv and lv and lv > 0 then g.skin:SetFrameLevel(lv - 1) end
 
 	g.buttons = {}
-	for i = 1, 40 do
+	-- 40 members + up to 40 opt-in hunter pets: pool sized so a full raid
+	-- with pets never runs out of buttons
+	for i = 1, 80 do
 		g.buttons[i] = buildUnitButton(i)
 	end
 	EVH.grid = g
@@ -852,6 +943,18 @@ local function buildDisplayPage(page)
 	tog("EVH_Aggro", L.showAggro, function() return db.opts.showAggro == 1 end, function()
 		db.opts.showAggro = (db.opts.showAggro == 1) and 0 or 1
 	end, L.tipAggro)
+	tog("EVH_HunterPets", L.showHunterPets, function() return db.opts.showHunterPets == 1 end, function()
+		db.opts.showHunterPets = (db.opts.showHunterPets == 1) and 0 or 1
+		EV.buildRoster()
+		EV.rebuildLayout()
+		EV.refreshAll()
+	end, L.tipHunterPets)
+	tog("EVH_OtherPets", L.showOtherPets, function() return db.opts.showOtherPets == 1 end, function()
+		db.opts.showOtherPets = (db.opts.showOtherPets == 1) and 0 or 1
+		EV.buildRoster()
+		EV.rebuildLayout()
+		EV.refreshAll()
+	end, L.tipOtherPets)
 	tog("EVH_Lock", L.lockPos, function() return db.opts.locked == 1 end, function()
 		db.opts.locked = (db.opts.locked == 1) and 0 or 1
 	end, L.tipLock)
