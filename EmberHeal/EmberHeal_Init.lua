@@ -22,6 +22,33 @@ local function rosterChanged()
 	EV.refreshAll()
 end
 
+-- (local) the engine's bootstrap script-error dialog (the GetDifficultyColor
+-- popup: FrameXML loads before addons, so the addon's shim is too late).
+-- No CVar gates it, but it is still open when the first addon events fire --
+-- find it among the visible top-level frames and close it, so reloads stop
+-- needing a manual 确定 click. Names are echoed once for verification.
+local function killBootstrapErrorBox()
+	local ok = pcall(function()
+		local shown = {}
+		for _, f in pairs({ UIParent:GetChildren() }) do
+			local okS, vis = pcall(f.IsShown, f)
+			local okN, nm = pcall(f.GetName, f)
+			if okS and vis and okN and nm then
+				shown[#shown + 1] = nm
+				local low = string.lower(nm)
+				if string.find(low, "error", 1, true) and nm ~= "UIErrorsFrame" then
+					pcall(f.Hide, f)
+					shown[#shown] = nm .. "(hidden)"
+				end
+			end
+		end
+		if #shown > 0 then
+			EV.echo("top frames: " .. table.concat(shown, ", "))
+		end
+	end)
+	if not ok then EV.diag("errbox scan failed") end
+end
+
 local function onEvent(a, b)
 	local ev = resolveEvent(a, b)
 	if not ev then return end
@@ -31,8 +58,10 @@ local function onEvent(a, b)
 		EV.buildAll()
 		EV.refreshAll()
 		EV.applyMiddleCast()
+		killBootstrapErrorBox()
 		EV.echo((EV.L.title or "EmberHeal") .. " " .. (EV.VERSION or "?") .. " 已加载 / loaded")
 	elseif ev == "PLAYER_ENTERING_WORLD" then
+		killBootstrapErrorBox()
 		if EV.db() then
 			EV.buildRoster()
 			EV.rebuildLayout()
