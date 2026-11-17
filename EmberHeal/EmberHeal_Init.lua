@@ -26,24 +26,16 @@ end
 -- popup: FrameXML loads before addons, so the addon's shim is too late).
 -- No CVar gates it, but it is still open when the first addon events fire --
 -- find it among the visible top-level frames and close it, so reloads stop
--- needing a manual 确定 click. Names are echoed once for verification.
+-- needing a manual 确定 click.
 local function killBootstrapErrorBox()
 	local ok = pcall(function()
-		local shown = {}
 		for _, f in pairs({ UIParent:GetChildren() }) do
 			local okS, vis = pcall(f.IsShown, f)
 			local okN, nm = pcall(f.GetName, f)
-			if okS and vis and okN and nm then
-				shown[#shown + 1] = nm
-				local low = string.lower(nm)
-				if string.find(low, "error", 1, true) and nm ~= "UIErrorsFrame" then
-					pcall(f.Hide, f)
-					shown[#shown] = nm .. "(hidden)"
-				end
+			if okS and vis and okN and nm and nm ~= "UIErrorsFrame"
+			   and string.find(string.lower(nm), "error", 1, true) then
+				pcall(f.Hide, f)
 			end
-		end
-		if #shown > 0 then
-			EV.echo("top frames: " .. table.concat(shown, ", "))
 		end
 	end)
 	if not ok then EV.diag("errbox scan failed") end
