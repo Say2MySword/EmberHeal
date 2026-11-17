@@ -588,20 +588,9 @@ local function updateButton(b, m)
 	-- the cell background is barBg -- tint it so pets stand out
 	if b.barBg then
 		if m.isPet then
-			b.barBg:SetTexture(0.34, 0.23, 0.10, 1)
+			b.barBg:SetTexture(0.12, 0.09, 0.05, 0.9)
 		else
 			b.barBg:SetTexture(0.06, 0.06, 0.06, 0.9)
-		end
-	end
-	-- at full HP the bar covers the whole cell, hiding any base tint; let
-	-- the pet's tan base shine through the bar so pets stay distinguishable
-	-- at every HP level (players keep a solid bar)
-	local barTex = bar:GetStatusBarTexture()
-	if barTex then
-		if m.isPet then
-			barTex:SetAlpha(0.75)
-		else
-			barTex:SetAlpha(1)
 		end
 	end
 	-- integer pixel size + auto-extent (no SetWidth/SetHeight): the
