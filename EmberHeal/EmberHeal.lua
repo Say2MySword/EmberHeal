@@ -99,7 +99,7 @@ local strsub = string.sub
 local strlower = string.lower
 local strformat = string.format
 
-EVH.VERSION = "1.0.22-local"
+EVH.VERSION = "1.0.23-local"
 
 -- -------------------------------------------------------------
 -- Localization (zhCN / enUS, picked by client locale)
@@ -138,6 +138,7 @@ local L_ZH = {
 	showBuffW    = "增益监视",
 	showRange    = "范围提示",
 	showAggro    = "仇恨提示",
+	showPets     = "显示猎人宠物",
 	rangeDist    = "范围判定",
 	resetPos     = "重置位置",
 	testMode     = "测试模式",
@@ -170,6 +171,8 @@ local L_ZH = {
 	uOor         = "超出范围",
 	uAggro       = "被攻击",
 	uDebuff      = "减益: ",
+	petTag       = "宠",
+	petOwner     = "主人: ",
 	clickLeft    = "左键",
 	clickLeftShift = "左键+Shift",
 	clickLeftCtrl  = "左键+Ctrl",
@@ -194,6 +197,7 @@ local L_ZH = {
 	tipBuffW     = "\"监视\"页列表中的增益缺失时,框体左上角显示黄点",
 	tipRange     = "队友超出施法距离时,其框体整体变暗",
 	tipAggro     = "队友正被怪物攻击时,其框体显示红色边框",
+	tipShowPets  = "开启后,猎人队友的宠物会作为额外成员显示在主人旁边(名字前带\"宠\"标记,悬停可见主人),可像队友一样点击施法给宝宝加血;默认关闭",
 	tipLock      = "锁定后治疗框架不可拖动,防止战斗中误拖",
 	tipClickDbg  = "排查鼠标键无反应:开启后点击治疗格子会在聊天框输出各环节参数(事件/按键名/绑定槽位),设置跨重载保存",
 	tipMidCast   = "释放引擎占用的鼠标中键(原绑定会被记住,关闭时自动还原并保存),否则点击施法收不到中键",
@@ -232,6 +236,7 @@ local L_EN = {
 	showBuffW    = "Buff watch",
 	showRange    = "Range dim",
 	showAggro    = "Aggro border",
+	showPets     = "Hunter pets",
 	rangeDist    = "Range check",
 	resetPos     = "Reset position",
 	testMode     = "Test mode",
@@ -264,6 +269,8 @@ local L_EN = {
 	uOor         = "Out of range",
 	uAggro       = "Aggro",
 	uDebuff      = "Debuff: ",
+	petTag       = "pet",
+	petOwner     = "Owner: ",
 	clickLeft    = "Left",
 	clickLeftShift = "Left+Shift",
 	clickLeftCtrl  = "Left+Ctrl",
@@ -288,6 +295,7 @@ local L_EN = {
 	tipBuffW     = "Yellow dot at the top-left when a buff from the Watch list is missing",
 	tipRange     = "Dim the whole cell when the member is out of casting range",
 	tipAggro     = "Red border on the cell of a member being attacked",
+	tipShowPets  = "Show hunter teammates' pets as extra members next to their owner (\"pet\" tag, owner on hover) so they can be click-healed; off by default",
 	tipLock      = "Lock the healing grid so it cannot be dragged by mistake",
 	tipClickDbg  = "Diagnose dead mouse buttons: clicking a cell prints event/button/slot info to chat; persists across reloads",
 	tipMidCast   = "Frees the engine's middle-button binding (remembered and restored when turned off); otherwise click-cast never sees the middle button",
@@ -372,6 +380,7 @@ local DEFAULT_DB = {
 		showBuffW    = 1,
 		showRange    = 1,
 		showAggro    = 1,
+		showPets     = 0,    -- 显示猎人队友宠物作为成员(默认关)
 		numDebuffs   = 4,
 		rangeDist    = 4,     -- CheckInteractDistance bucket
 		locked       = 0,
@@ -500,6 +509,7 @@ EVH.roster = {}
 
 function EVH.buildRoster()
 	local out = {}
+	local wantPets = (db and db.opts and db.opts.showPets == 1)
 	local n = GetNumRaidMembers()
 	if n > 0 then
 		for i = 1, n do
@@ -511,6 +521,21 @@ function EVH.buildRoster()
 					unit = unit, name = name, class = clsFile,
 					subgroup = subgroup or 1, online = online, isDead = isDead,
 				}
+				-- opt-in hunter pets: raidpet units are clickable/healable like
+				-- party members (owner's class colour, sorted after the owner)
+				if wantPets and clsFile == "HUNTER" then
+					local pu = "raidpet" .. i
+					local okE, has = pcall(UnitExists, pu)
+					if okE and has then
+						local okN, pn = pcall(UnitName, pu)
+						if okN and pn and pn ~= "" then
+							out[#out + 1] = {
+								unit = pu, name = pn, class = clsFile,
+								subgroup = subgroup or 1, isPet = true, owner = name,
+							}
+						end
+					end
+				end
 			end
 		end
 	else
@@ -526,11 +551,29 @@ function EVH.buildRoster()
 			if nm then
 				if c2 then CLASS_LOCAL[c2] = cLocal end
 				out[#out + 1] = { unit = unit, name = nm, class = c2, subgroup = 1 }
+				if wantPets and c2 == "HUNTER" then
+					local pu = "partypet" .. i
+					local okE, has = pcall(UnitExists, pu)
+					if okE and has then
+						local okN, pn = pcall(UnitName, pu)
+						if okN and pn and pn ~= "" then
+							out[#out + 1] = {
+								unit = pu, name = pn, class = c2,
+								subgroup = 1, isPet = true, owner = nm,
+							}
+						end
+					end
+				end
 			end
 		end
 	end
+	-- subgroup, then owner-adjacent name (a pet sorts right after its owner)
 	table.sort(out, function(a, b)
 		if a.subgroup ~= b.subgroup then return a.subgroup < b.subgroup end
+		local an = (a.isPet and a.owner) or a.name
+		local bn = (b.isPet and b.owner) or b.name
+		if an ~= bn then return an < bn end
+		if (not not a.isPet) ~= (not not b.isPet) then return not a.isPet end
 		return a.name < b.name
 	end)
 	EVH.roster = out

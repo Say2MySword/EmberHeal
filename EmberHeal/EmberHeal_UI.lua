@@ -219,6 +219,9 @@ local function buildUnitButton(i)
 		GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
 		local r, gg, bl = EV.classColor(m.class)
 		GameTooltip:SetText(m.name or "?", r, gg, bl)
+		if m.isPet then
+			GameTooltip:AddLine(L.petOwner .. tostring(m.owner or "?"), 0.7, 0.7, 0.7)
+		end
 		GameTooltip:AddLine(strformat("%d / %d (%.0f%%)", m.hp or 0, m.max or 0, m.pct or 0), 0.7, 1, 0.7)
 		if m.dead then GameTooltip:AddLine(L.uDead, 1, 0.3, 0.3) end
 		if m.offline then GameTooltip:AddLine(L.uOffline, 0.5, 0.5, 0.5) end
@@ -567,9 +570,9 @@ local function updateButton(b, m)
 	if test then cr, cg, cb = 1, 0.3, 0.2 end
 	bar:SetStatusBarColor(cr, cg, cb)
 
-	-- name
+	-- name (hunter pets carry a "宠/pet" tag so they read as pets, not players)
 	local name = b.name
-	name:SetText(m.name or "?")
+	name:SetText(((m.isPet and (L.petTag .. " ")) or "") .. (m.name or "?"))
 	-- integer pixel size + auto-extent (no SetWidth/SetHeight): the
 	-- wrapped-fontstring path double-renders on this engine (ghosting)
 	local fsize = floor((opts.fontSize or 11) * scale + 0.5)
@@ -663,6 +666,43 @@ local function refreshAll()
 	local g = EVH.grid
 	if not g or not g.GridFrame then return end
 	if not g.GridFrame:IsShown() then return end
+	-- hunter pets (opt-in) summon/despawn without firing any roster event:
+	-- at most once per second, compare present pet units against the roster
+	-- and rebuild when a pet appeared or vanished
+	if db and db.opts and db.opts.showPets == 1 then
+		local now = (GetTime and GetTime() or 0)
+		if (now - (refreshAll.lastPetCheck or 0)) >= 1.0 then
+			refreshAll.lastPetCheck = now
+			local known = {}
+			for _, m in ipairs(EV.roster) do
+				if m.isPet then known[m.unit] = true end
+			end
+			local changed = false
+			for u in pairs(known) do
+				if not UnitExists(u) then changed = true break end
+			end
+			if not changed then
+				local isRaid = (GetNumRaidMembers() > 0)
+				local n = isRaid and GetNumRaidMembers() or GetNumPartyMembers()
+				for i = 1, n do
+					local cls
+					if isRaid then
+						cls = select(6, GetRaidRosterInfo(i))
+					else
+						cls = select(2, UnitClass("party" .. i))
+					end
+					if cls == "HUNTER" then
+						local pu = (isRaid and "raidpet" or "partypet") .. i
+						if UnitExists(pu) and not known[pu] then changed = true break end
+					end
+				end
+			end
+			if changed then
+				EV.buildRoster()
+				layoutGrid()
+			end
+		end
+	end
 	for i = 1, g.shown or 0 do
 		local b = g.buttons[i]
 		if b and b.evhMember then
@@ -744,7 +784,9 @@ local function buildGrid()
 	if okLv and lv and lv > 0 then g.skin:SetFrameLevel(lv - 1) end
 
 	g.buttons = {}
-	for i = 1, 40 do
+	-- 40 members + up to 40 opt-in hunter pets: pool sized so a full raid
+	-- with pets never runs out of buttons
+	for i = 1, 80 do
 		g.buttons[i] = buildUnitButton(i)
 	end
 	EVH.grid = g
@@ -852,6 +894,12 @@ local function buildDisplayPage(page)
 	tog("EVH_Aggro", L.showAggro, function() return db.opts.showAggro == 1 end, function()
 		db.opts.showAggro = (db.opts.showAggro == 1) and 0 or 1
 	end, L.tipAggro)
+	tog("EVH_ShowPets", L.showPets, function() return db.opts.showPets == 1 end, function()
+		db.opts.showPets = (db.opts.showPets == 1) and 0 or 1
+		EV.buildRoster()
+		EV.rebuildLayout()
+		EV.refreshAll()
+	end, L.tipShowPets)
 	tog("EVH_Lock", L.lockPos, function() return db.opts.locked == 1 end, function()
 		db.opts.locked = (db.opts.locked == 1) and 0 or 1
 	end, L.tipLock)
