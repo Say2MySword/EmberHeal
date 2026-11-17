@@ -687,46 +687,50 @@ local function refreshAll()
 	if not g.GridFrame:IsShown() then return end
 	-- hunter pets (opt-in) summon/despawn without firing any roster event:
 	-- at most once per second, compare present pet units against the roster
-	-- and rebuild when a pet appeared or vanished
-	if db and db.opts and db.opts.showPets == 1 then
-		local now = (GetTime and GetTime() or 0)
-		if (now - (refreshAll.lastPetCheck or 0)) >= 1.0 then
-			refreshAll.lastPetCheck = now
-			local known = {}
-			for _, m in ipairs(EV.roster) do
-				if m.isPet then known[m.unit] = true end
-			end
-			local changed = false
-			-- own pet summon/despawn
-			if not known["pet"] and UnitExists("pet") then changed = true end
-			for u in pairs(known) do
-				if not UnitExists(u) then changed = true break end
-			end
-			if not changed then
-				local isRaid = (GetNumRaidMembers() > 0)
-				local n = isRaid and GetNumRaidMembers() or GetNumPartyMembers()
-				for i = 1, n do
-					local cls
-					if isRaid then
-						cls = select(6, GetRaidRosterInfo(i))
-					else
-						cls = select(2, UnitClass("party" .. i))
-					end
-					if cls == "HUNTER" then
-						local pu = (isRaid and "raidpet" or "partypet") .. i
-						if UnitExists(pu) and not known[pu] then changed = true break end
+	-- and rebuild when a pet appeared or vanished. The whole block is one
+	-- pcall -- a throw anywhere in here used to kill refreshAll silently
+	-- every tick (frozen cells, nothing in chat).
+	local okPet, errPet = pcall(function()
+		if db and db.opts and db.opts.showPets == 1 then
+			local now = (GetTime and GetTime() or 0)
+			if (now - (refreshAll.lastPetCheck or 0)) >= 1.0 then
+				refreshAll.lastPetCheck = now
+				local known = {}
+				for _, m in ipairs(EV.roster) do
+					if m.isPet then known[m.unit] = true end
+				end
+				local changed = false
+				-- own pet summon/despawn
+				if not known["pet"] and UnitExists("pet") then changed = true end
+				for u in pairs(known) do
+					if not UnitExists(u) then changed = true break end
+				end
+				if not changed then
+					local isRaid = (GetNumRaidMembers() > 0)
+					local n = isRaid and GetNumRaidMembers() or GetNumPartyMembers()
+					for i = 1, n do
+						local cls
+						if isRaid then
+							cls = select(6, GetRaidRosterInfo(i))
+						else
+							cls = select(2, UnitClass("party" .. i))
+						end
+						if cls == "HUNTER" then
+							local pu = (isRaid and "raidpet" or "partypet") .. i
+							if UnitExists(pu) and not known[pu] then changed = true break end
+						end
 					end
 				end
-			end
-			if changed then
-				local okR, errR = pcall(EV.buildRoster)
-				if okR then
+				if changed then
+					EV.buildRoster()
 					layoutGrid()
-				else
-					EV.echo("roster error: " .. string.sub(tostring(errR), 1, 140))
 				end
 			end
 		end
+	end)
+	if not okPet and errPet ~= refreshAll.lastPetErr then
+		refreshAll.lastPetErr = errPet
+		EV.echo("petcheck error: " .. string.sub(tostring(errPet), 1, 140))
 	end
 	-- visible failure reporting: OnUpdate errors are swallowed silently on
 	-- this engine, and a throw anywhere below froze every cell (no bg tint,
