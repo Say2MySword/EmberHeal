@@ -719,15 +719,32 @@ local function refreshAll()
 				end
 			end
 			if changed then
-				EV.buildRoster()
-				layoutGrid()
+				local okR, errR = pcall(EV.buildRoster)
+				if okR then
+					layoutGrid()
+				else
+					EV.echo("roster error: " .. string.sub(tostring(errR), 1, 140))
+				end
 			end
 		end
 	end
+	-- visible failure reporting: OnUpdate errors are swallowed silently on
+	-- this engine, and a throw anywhere below froze every cell (no bg tint,
+	-- no hp, stale tooltip) with nothing in chat. Echo each distinct error
+	-- (throttled) so the failing file:line lands in chat.
 	for i = 1, g.shown or 0 do
 		local b = g.buttons[i]
 		if b and b.evhMember then
-			updateButton(b, b.evhMember)
+			local ok, err = pcall(updateButton, b, b.evhMember)
+			if not ok then
+				local e = string.sub(tostring(err), 1, 140)
+				local now2 = (GetTime and GetTime() or 0)
+				if e ~= refreshAll.lastCellErr or (now2 - (refreshAll.lastCellErrAt or 0)) > 5 then
+					refreshAll.lastCellErr = e
+					refreshAll.lastCellErrAt = now2
+					EV.echo("cell error: " .. e)
+				end
+			end
 		end
 	end
 end
