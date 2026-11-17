@@ -99,7 +99,7 @@ local strsub = string.sub
 local strlower = string.lower
 local strformat = string.format
 
-EVH.VERSION = "1.0.23-local"
+EVH.VERSION = "1.0.23"
 
 -- -------------------------------------------------------------
 -- Localization (zhCN / enUS, picked by client locale)
