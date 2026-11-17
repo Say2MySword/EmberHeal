@@ -222,7 +222,11 @@ local function buildUnitButton(i)
 		if m.isPet then
 			GameTooltip:AddLine(L.petOwner .. tostring(m.owner or "?"), 0.7, 0.7, 0.7)
 		end
-		GameTooltip:AddLine(strformat("%d / %d (%.0f%%)", m.hp or 0, m.max or 0, m.pct or 0), 0.7, 1, 0.7)
+		if (m.max or 0) > 0 then
+			GameTooltip:AddLine(strformat("%d / %d (%.0f%%)", m.hp or 0, m.max or 0, m.pct or 0), 0.7, 1, 0.7)
+		else
+			GameTooltip:AddLine(L.hpUnknown, 0.7, 0.9, 0.7)
+		end
 		if m.dead then GameTooltip:AddLine(L.uDead, 1, 0.3, 0.3) end
 		if m.offline then GameTooltip:AddLine(L.uOffline, 0.5, 0.5, 0.5) end
 		if m.oor then GameTooltip:AddLine(L.uOor, 0.7, 0.7, 0.7) end
@@ -580,11 +584,13 @@ local function updateButton(b, m)
 		name:SetText(m.name or "?")
 		name:SetTextColor(1, 1, 1)
 	end
-	if b.evhBG then
+	-- unit buttons have no evhBG (that is an options-panel texture);
+	-- the cell background is barBg -- tint it so pets stand out
+	if b.barBg then
 		if m.isPet then
-			b.evhBG:SetTexture(0.26, 0.19, 0.10, 0.72)
+			b.barBg:SetTexture(0.26, 0.19, 0.10, 0.72)
 		else
-			b.evhBG:SetTexture(0.16, 0.16, 0.16, 0.72)
+			b.barBg:SetTexture(0.06, 0.06, 0.06, 0.9)
 		end
 	end
 	-- integer pixel size + auto-extent (no SetWidth/SetHeight): the
@@ -592,16 +598,16 @@ local function updateButton(b, m)
 	local fsize = floor((opts.fontSize or 11) * scale + 0.5)
 	name:SetFont(FONT_PATH, fsize)
 
-	-- health text
+	-- health text (pets with an unsynced max show "?" instead of a bogus 0)
 	local hpfs = b.hp
 	local hpText = ""
-	if opts.showPct == 1 then hpText = strformat("%.0f%%", m.pct or 0) end
-	if opts.showHealth == 1 then
-		if hpText ~= "" then
-			hpText = strformat("%d %s", m.hp or 0, hpText)
-		else
-			hpText = strformat("%d", m.hp or 0)
-		end
+	if m.isPet and mx == 0 then
+		hpText = "?"
+	elseif opts.showPct == 1 then hpText = strformat("%.0f%%", m.pct or 0) end
+	if hpText == "" and opts.showHealth == 1 then
+		hpText = strformat("%d", m.hp or 0)
+	elseif hpText ~= "" and hpText ~= "?" and opts.showHealth == 1 then
+		hpText = strformat("%d %s", m.hp or 0, hpText)
 	end
 	hpfs:SetText(hpText)
 	hpfs:SetFont(FONT_PATH, fsize)
